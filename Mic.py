@@ -5,7 +5,9 @@ from threading import Thread
 from time import sleep
 from datetime import datetime
 import gdown
-import RPi.GPIO as GPIO
+import RPi.GPIO as 
+
+from EnviroSensors import continuous_sensor_recording
 
 def updateConfig():
     #Download the config file from Google Drive
@@ -61,7 +63,7 @@ def startContRecording(contLength):
     wf.writeframes(b''.join(frames))
     wf.close()
 
-if __name__ == "__main__":
+def main():
     #Mic Configuration
     chunk = 9600  # Record in chunks of 9600 samples
     sampleFormat = pyaudio.paInt16  # 16 bits per sample
@@ -83,6 +85,9 @@ if __name__ == "__main__":
     p = pyaudio.PyAudio()  # Create an interface to PortAudio
     stream = p.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
     audioQueue = deque(maxlen=int((trigLengthBefore+trigLengthAfter)*samplingRate/chunk))
+
+    sensors_thread = Thread(target=continuous_sensor_recording)
+    sensors_thread.start()
 
     while True:
         audioQueue.append(stream.read(chunk))
@@ -114,6 +119,11 @@ if __name__ == "__main__":
     stream.close()
     # Terminate the PortAudio interface
     p.terminate()
+
+
+if __name__ == "__main__":
+    main()
+    
 
 
 
