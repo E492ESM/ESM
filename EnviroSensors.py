@@ -25,7 +25,7 @@ except ImportError:
     from smbus import SMBus
 
 def write_logline(logfile, text):
-    now = datetime.strftime(datetime.now(), '%H:%M')
+    now = datetime.strftime(datetime.now(), '%d-%m-%Y %H-%M-%S')
     log_text = '{}  {}\n'.format(now, text)
     print(log_text, end='')     # also display log info, comment out if not needed
     logfile.write(log_text)
@@ -108,7 +108,7 @@ def display_status(disp):
 
 
 
-def continuous_sensor_recording():
+def continuous_sensor_recording(frequency):
 	# Raspberry Pi ID
     device_serial_number = get_serial_number()
     device_id = "raspi-" + device_serial_number
@@ -138,13 +138,29 @@ def continuous_sensor_recording():
             values = read_bme280(bme280)
             print(values)
             write_log(values)
-            time.sleep(30)
+            time.sleep(frequency)
             
         except Exception as e:
             print(e)
 
+def triggered_grab_data(startTime, duration, frequency):
+    time.sleep(duration)
+    temp = ""
+    with open("test.txt", "r") as logfile:
+        # Skips text before the beginning of the interesting block:
+        for line in logfile:
+            if line.strip() == startTime:
+                break
+        for i in range(0, (duration/frequency)):
+            temp += logfile.readline()
 
+    triggered_output_log(startTime, temp)
+            
+def triggered_output_log(startTime, temp):
+    with open("temp_out", "a") as logfile:
+        logfile.write(temp)
 
+        
 def main():
     # Raspberry Pi ID
     device_serial_number = get_serial_number()

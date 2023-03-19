@@ -7,7 +7,7 @@ from datetime import datetime
 import gdown
 import RPi.GPIO as 
 
-from EnviroSensors import continuous_sensor_recording
+from EnviroSensors import continuous_sensor_recording, triggered_grab_data
 
 def updateConfig():
     #Download the config file from Google Drive
@@ -86,7 +86,13 @@ def main():
     stream = p.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
     audioQueue = deque(maxlen=int((trigLengthBefore+trigLengthAfter)*samplingRate/chunk))
 
-    sensors_thread = Thread(target=continuous_sensor_recording)
+    # frequency of the sensor recordings in seconds
+    frequency = 5
+    duration = 10 # temp value i dont know what the recording duration will be
+
+
+    # Starts recording
+    sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency,))
     sensors_thread.start()
 
     while True:
@@ -113,6 +119,8 @@ def main():
             wf.setframerate(samplingRate)
             wf.writeframes(b''.join(frames))
             wf.close()
+
+            triggered_grab_data(startTime, duration, frequency)
 
     # Stop and close the stream 
     stream.stop_stream()
