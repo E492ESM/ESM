@@ -5,9 +5,9 @@ from threading import Thread
 from time import sleep
 from datetime import datetime
 import gdown
-import RPi.GPIO as GPIO
+#import RPi.GPIO as GPIO
 
-from EnviroSensors import continuous_sensor_recording
+from EnviroSensors import continuous_sensor_recording, triggered_grab_data
 
 #Mic Configuration
 chunk = 9600  # Record in chunks of 9600 samples
@@ -25,11 +25,11 @@ trigLengthAfter = 15
 def updateConfig():
     #Download the config file from Google Drive
     url = 'https://drive.google.com/uc?id=1JLCfnInWqMLgsnM06CptSa6VYjuuY1tZ'
-    output = 'home/pi/Desktop/ESM/config.txt'
+    output = '/home/pi/Desktop/ESM/config.txt'
     gdown.download(url, output, quiet=False)
 
     #Parse config file
-    with open('home/pi/Desktop/ESM/config.txt') as f:
+    with open('/home/pi/Desktop/ESM/config.txt') as f:
         moduleName = f.readline().strip()
         contLength = f.readline().strip()
         contClipLength = f.readline().strip()
@@ -114,9 +114,9 @@ def startContRecording(contLength, contClipLength):
 
 def main():
     #pin settings
-    GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
-    GPIO.setup(29, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-    GPIO.setup(31, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    #GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
+    #GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    #GPIO.setup(11, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
     moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter = updateConfig()
     p = pyaudio.PyAudio()  # Create an interface to PortAudio
@@ -124,24 +124,46 @@ def main():
     #Create fixed-size buffer for triggered mode
     audioQueue = deque(maxlen=int((trigLengthBefore+trigLengthAfter)*samplingRate/chunk))
 
-    sensors_thread = Thread(target=continuous_sensor_recording)
-    sensors_thread.start()
-
+    runC=True
+    runT=0
+    
+    # frequency of the sensor recordings in seconds
+    frequency = 5
+    #duration = 10 # temp value i dont know what the recording duration will be
+    duration = contLength
+    #duration = 1
+    
     while True:
+        runT+=1
         audioQueue.append(stream.read(chunk))
         #Continuous Mode
-        if GPIO.input(29) == GPIO.HIGH:
-            #Update settings and start a new thread to record in continuous mode
-            moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter = updateConfig()
+        #if GPIO.input(10) == GPIO.HIGH:
+        if runC:
+            # Starts recording
+            sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency, contLength,))
+            sensors_thread.start()
+
+            moduleName, contLength, trigLengthBefore, trigLengthAfter = updateConfig()
+            print(f"contLength = {contLength}")
             startTime = datetime.now()
             thread = Thread(target=startContRecording, args=(contLength, contClipLength))
             thread.start()
-            #Once the recording is done, the spawned thread will end - no need to join
+            
+            # Starts recording
+            #sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency,))
+            #sensors_thread.start()
+            print("hesdafsadf")
+            sensors_thread.join()
+            print("ghaahshadhashsahashsahsahsahsah")
+            thread.join()  #LEO fix please. issue here. thread does not come back.
+            
+    
+            runC = False
         #Triggered Mode    
-        if GPIO.input(31) == GPIO.HIGH:
-            #Save the audio data to a separate queue for processing
-            savedAudioQueue = audioQueue
+        #if GPIO.input(11) == GPIO.HIGH:
+        if runT == 1000:
             startTime = datetime.now()
+            savedAudioQueue = audioQueue
             frames = []
             for elem in savedAudioQueue:
                 frames.append(elem)
@@ -155,6 +177,9 @@ def main():
             wf.writeframes(b''.join(frames))
             wf.close()
 
+            #triggered_grab_data(startTime, duration, frequency)
+    print("are we hereeee??")   
+
     # Stop and close the stream 
     stream.stop_stream()
     stream.close()
@@ -164,8 +189,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
-
-
-
-
