@@ -5,18 +5,18 @@ from threading import Thread
 from time import sleep
 from datetime import datetime
 import gdown
-import RPi.GPIO as 
+#import RPi.GPIO as GPIO
 
 from EnviroSensors import continuous_sensor_recording, triggered_grab_data
 
 def updateConfig():
     #Download the config file from Google Drive
     url = 'https://drive.google.com/uc?id=1JLCfnInWqMLgsnM06CptSa6VYjuuY1tZ'
-    output = 'home/pi/Desktop/ESM/config.txt'
+    output = '/home/pi/Desktop/ESM/config.txt'
     gdown.download(url, output, quiet=False)
 
     #Parse config file
-    with open('home/pi/Desktop/ESM/config.txt') as f:
+    with open('/home/pi/Desktop/ESM/config.txt') as f:
         moduleName = f.readline().strip()
         contLength = f.readline().strip()
         trigLengthBefore = f.readline().strip()
@@ -77,18 +77,22 @@ def main():
     trigLengthAfter = 15
 
     #pin settings
-    GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
-    GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-    GPIO.setup(11, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    #GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
+    #GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+    #GPIO.setup(11, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
     moduleName, contLength, trigLengthBefore, trigLengthAfter = updateConfig()
     p = pyaudio.PyAudio()  # Create an interface to PortAudio
     stream = p.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
     audioQueue = deque(maxlen=int((trigLengthBefore+trigLengthAfter)*samplingRate/chunk))
 
+    runC=True
+    runT=0
+    
     # frequency of the sensor recordings in seconds
     frequency = 5
-    duration = 10 # temp value i dont know what the recording duration will be
+    #duration = 10 # temp value i dont know what the recording duration will be
+    duration = contLength
 
 
     # Starts recording
@@ -96,17 +100,22 @@ def main():
     sensors_thread.start()
 
     while True:
+        runT+=1
         audioQueue.append(stream.read(chunk))
         #Continuous Mode
-        if GPIO.input(10) == GPIO.HIGH:
+        #if GPIO.input(10) == GPIO.HIGH:
+        if runC:
             moduleName, contLength, trigLengthBefore, trigLengthAfter = updateConfig()
+            print(contLength)
             startTime = datetime.now()
             thread = Thread(target=startContRecording, args=(contLength,))
             thread.start()
+            runC = False
         #Triggered Mode    
-        if GPIO.input(11) == GPIO.HIGH:
-            savedAudioQueue = audioQueue
+        #if GPIO.input(11) == GPIO.HIGH:
+        if runT == 1000:
             startTime = datetime.now()
+            savedAudioQueue = audioQueue
             frames = []
             for elem in savedAudioQueue:
                 frames.append(elem)
@@ -131,8 +140,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
-
-
-
-
