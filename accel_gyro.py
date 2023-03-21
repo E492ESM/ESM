@@ -1,8 +1,12 @@
 '''
         Interfacing Raspberry Pi with MPU6050
         https://www.electronicwings.com/raspberry-pi/mpu6050-accelerometergyroscope-interfacing-with-raspberry-pi
+
         Specifications
         https://www.electronicwings.com/sensors-modules/mpu6050-gyroscope-accelerometer-temperature-sensor-module
+
+        Plotting
+        https://makersportal.com/blog/2019/11/11/raspberry-pi-python-accelerometer-gyroscope-magnetometer#interfacing=
 '''
 import smbus,time,datetime
 from time import sleep
