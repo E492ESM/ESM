@@ -13,6 +13,7 @@ from time import sleep
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 #MPU6050 Registers and Address
 PWR_MGMT_1   = 0x6B
 SMPLRT_DIV   = 0x19
@@ -51,11 +52,6 @@ ACCEL_GYRO_SLEEP_TIME = 1
 NUM_POINTS = 1000
 
 def get_config():
-    #Download the config file from Google Drive
-    #url = 'https://drive.google.com/uc?id=1JLCfnInWqMLgsnM06CptSa6VYjuuY1tZ'
-    #output = '/home/pi/Desktop/ESM/config.txt'
-    #gdown.download(url, output, quiet=False)
-
     #Parse config file
     global accel_sensitivity, gyro_sensitivity, accelSensSelect, gyroSensSelect
     
@@ -156,7 +152,8 @@ def get_data():
 def prep_graph():
     global mpu6050_str, mpu6050_vec,t_vec
     
-    plt.style.use('ggplot') # matplotlib visual style setting
+    # matplotlib visual style setting
+    plt.style.use('ggplot') 
     # prepping for visualization
     mpu6050_str = ['accel-x','accel-y','accel-z','gyro-x','gyro-y','gyro-z']
     mpu6050_vec,t_vec = [],[]
@@ -170,15 +167,17 @@ def plot_data():
     # plot the resulting data in 2-subplots, with each data axis
     fig,axs = plt.subplots(2,1,figsize=(12,7),sharex=True)
     cmap = plt.cm.Set1
-
-    ax = axs[0] # plot accelerometer data
+    
+    # plot accelerometer data
+    ax = axs[0] 
     for zz in range(0,np.shape(mpu6050_vec)[1]-3):
         data_vec = [ii[zz] for ii in mpu6050_vec]
         ax.plot(t_vec,data_vec,label=mpu6050_str[zz],color=cmap(zz))
     ax.legend(bbox_to_anchor=(1.12,0.9))
     ax.set_ylabel('Acceleration [g]',fontsize=12)
-
-    ax2 = axs[1] # plot gyroscope data
+    
+    # plot gyroscope data
+    ax2 = axs[1] 
     for zz in range(3,np.shape(mpu6050_vec)[1]):
         data_vec = [ii[zz] for ii in mpu6050_vec]
         ax2.plot(t_vec,data_vec,label=mpu6050_str[zz],color=cmap(zz))
@@ -189,25 +188,28 @@ def plot_data():
     plt.show()
 
 
-
-
 bus = smbus.SMBus(1)    # or bus = smbus.SMBus(0) for older version boards
 Device_Address = 0x68   # MPU6050 device address
 
+#Gets the sensitivity from the config.txt
 get_config()
+#Configures the MPU6050 chip
 MPU_Init()
+#Configures the plot settings
 prep_graph()
 
+#Print sensor settings before polling begins
+'''
 print ("---- Reading Data, Settings: ----")
 print (" Sensitivity of Accelerometer: " + str(accelSensSelect) + ", " + str(accel_sensitivity))
 print (" Sensitivity of Gyroscope: " + str(gyroSensSelect) + ", " + str(gyro_sensitivity))
 print("")
+'''
 
+#Loop used for live polling of sensor
 '''
 while True:
     get_data()
-
-    # print ("Gx=%.2f" %Gx, u'\u00b0'+ "/s", "\tGy=%.2f" %Gy, u'\u00b0'+ "/s", "\tGz=%.2f" %Gz, u'\u00b0'+ "/s", "\tAx=%.2f g" %Ax, "\tAy=%.2f g" %Ay, "\tAz=%.2f g" %Az)
     print("Accelerometer [g] \tAx=%.2f" %Ax, "\tAy=%.2f" %Ay, "\tAz=%.2f" %Az)
     print("Gyroscope ["u'\u00b0'+ "/s] \tGx=%.2f" %Gx, "\tGy=%.2f" %Gy, "\tGz=%.2f" %Gz)
     print("")
@@ -216,10 +218,11 @@ while True:
     sleep(ACCEL_GYRO_SLEEP_TIME)
 '''
 
+#Poll the sensor for data
 for i in range(0,NUM_POINTS):
     get_data()
     t_vec.append(time.time()) # capture timestamp
     mpu6050_vec.append([Ax,Ay,Az,Gx,Gy,Gz])
 
+#Visualize the data
 plot_data()
-
