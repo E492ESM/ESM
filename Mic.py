@@ -93,23 +93,33 @@ def main():
     frequency = 5
     #duration = 10 # temp value i dont know what the recording duration will be
     duration = contLength
-
-
-    # Starts recording
-    sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency,))
-    sensors_thread.start()
-
+    #duration = 1
+    
     while True:
         runT+=1
         audioQueue.append(stream.read(chunk))
         #Continuous Mode
         #if GPIO.input(10) == GPIO.HIGH:
         if runC:
+            # Starts recording
+            sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency, contLength,))
+            sensors_thread.start()
+
             moduleName, contLength, trigLengthBefore, trigLengthAfter = updateConfig()
-            print(contLength)
+            print(f"contLength = {contLength}")
             startTime = datetime.now()
             thread = Thread(target=startContRecording, args=(contLength,))
             thread.start()
+            
+            # Starts recording
+            #sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency,))
+            #sensors_thread.start()
+            print("hesdafsadf")
+            sensors_thread.join()
+            print("ghaahshadhashsahashsahsahsahsah")
+            thread.join()  #LEO fix please. issue here. thread does not come back.
+            
+    
             runC = False
         #Triggered Mode    
         #if GPIO.input(11) == GPIO.HIGH:
@@ -129,7 +139,8 @@ def main():
             wf.writeframes(b''.join(frames))
             wf.close()
 
-            triggered_grab_data(startTime, duration, frequency)
+            #triggered_grab_data(startTime, duration, frequency)
+    print("are we hereeee??")   
 
     # Stop and close the stream 
     stream.stop_stream()

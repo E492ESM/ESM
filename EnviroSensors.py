@@ -108,7 +108,10 @@ def display_status(disp):
 
 
 
-def continuous_sensor_recording(frequency):
+def continuous_sensor_recording(frequency, timeout):
+    # Timeout
+    #timer = time.time() + 60 * timeout
+    count = 0
 	# Raspberry Pi ID
     device_serial_number = get_serial_number()
     device_id = "raspi-" + device_serial_number
@@ -132,16 +135,23 @@ def continuous_sensor_recording(frequency):
 
     # Main loop to read data, display
     print("Stabilizing, please wait 10 seconds")
-    time.sleep(10)
+    #time.sleep(10)
     while True:
+        print(count)
+        if (count > (timeout*60/frequency)):
+            print("breaking sensor")
+            break  
         try:
+            print("here")
             values = read_bme280(bme280)
             print(values)
             write_log(values)
+            count = count + 1
             time.sleep(frequency)
             
         except Exception as e:
             print(e)
+    print("done sensor")
 
 def triggered_grab_data(startTime, duration, frequency):
     time.sleep(duration)
