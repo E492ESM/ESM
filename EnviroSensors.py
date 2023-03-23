@@ -1,6 +1,7 @@
 import argparse
 import ST7735
 import time
+import math
 from datetime import datetime
 
 from bme280 import BME280
@@ -134,17 +135,13 @@ def continuous_sensor_recording(frequency, timeout):
     print("Wi-Fi: {}\n".format("connected" if check_wifi() else "disconnected"))
 
     # Main loop to read data, display
-    print("Stabilizing, please wait 10 seconds")
-    #time.sleep(10)
     while True:
         print(count)
         if (count > (timeout*60/frequency)):
             print("breaking sensor")
             break  
         try:
-            print("here")
             values = read_bme280(bme280)
-            print(values)
             write_log(values)
             count = count + 1
             time.sleep(frequency)
@@ -153,21 +150,23 @@ def continuous_sensor_recording(frequency, timeout):
             print(e)
     print("done sensor")
 
-def triggered_grab_data(startTime, duration, frequency):
-    time.sleep(duration)
+def triggered_grab_data(startTime, before, after, frequency):
+    print(startTime)
+    duration = before + after
+    time.sleep(after)
     temp = ""
+    n = math.ceil(duration/frequency)
     with open("test.txt", "r") as logfile:
         # Skips text before the beginning of the interesting block:
-        for line in logfile:
-            if line.strip() == startTime:
-                break
-        for i in range(0, (duration/frequency)):
-            temp += logfile.readline()
+        for line in (logfile.readlines() [-n:]):
+            print(line, end ='')
+            print("LOG:" + line)
+            temp += line
 
     triggered_output_log(startTime, temp)
             
 def triggered_output_log(startTime, temp):
-    with open("temp_out", "a") as logfile:
+    with open(startTime.strftime("%d-%m-%Y %H-%M-%S") + "_tiggered_log.txt", "a") as logfile:
         logfile.write(temp)
 
         
