@@ -5,6 +5,9 @@ from collections import deque
 from threading import Thread
 from time import sleep
 from datetime import datetime, timedelta
+import smbus, time
+import numpy as np
+import matplotlib.pyplot as plt
 import gdown
 import RPi.GPIO as GPIO
 
@@ -23,12 +26,52 @@ sampleFormat = pyaudio.paInt16  # 16 bits per sample
 channels = 1
 samplingRate = 384000  # Record at 384000 samples per second
 
+#Gyroscope settings
+#Interfacing Raspberry Pi with MPU6050 based on: https://www.electronicwings.com/raspberry-pi/mpu6050-accelerometergyroscope-interfacing-with-raspberry-pi
+#Specifications based on: https://www.electronicwings.com/sensors-modules/mpu6050-gyroscope-accelerometer-temperature-sensor-module
+#Plotting based on: https://makersportal.com/blog/2019/11/11/raspberry-pi-python-accelerometer-gyroscope-magnetometer#interfacing=
+#MPU6050 Registers and Address
+PWR_MGMT_1   = 0x6B
+SMPLRT_DIV   = 0x19
+CONFIG       = 0x1A
+GYRO_CONFIG  = 0x1B
+INT_ENABLE   = 0x38
+ACCEL_XOUT_H = 0x3B
+ACCEL_YOUT_H = 0x3D
+ACCEL_ZOUT_H = 0x3F
+GYRO_XOUT_H  = 0x43
+GYRO_YOUT_H  = 0x45
+GYRO_ZOUT_H  = 0x47
+
+#Scaling factors for sensitivity (LSBs per dps), changes full-scale range of Accelerometer
+ACCEL_HI_SENS = 16384.0 #LSBs per g, ±2g
+ACCEL_MED_SENS = 8192.0 #LSBs per g, ±4g
+ACCEL_LOW_SENS = 4096.0 #LSBs per g, ±8g
+ACCEL_VERY_LOW_SENS = 2048.0 #LSBs per g, ±16g
+
+#Scaling factors for sensitivity (LSBs per dps), changes full-scale range of Gyroscope
+GYRO_HI_SENS = 131.0 #LSBs per dps, ±250 degrees per second (dps)
+GYRO_MED_SENS = 65.5 #LSBs per dps, ±500 degrees per second (dps)
+GYRO_LOW_SENS =  32.8 #LSBs per dps, ±1000 degrees per second (dps)
+GYRO_VERY_LOW_SENS =  16.4 #LSBs per dps, ±2000 degrees per second (dps)
+
+
+ACCEL_GYRO_SLEEP_TIME = 1 # Polling speed (sec)
+NUM_POINTS = 1000 # Number of points for testing
+bus = smbus.SMBus(1)    # or bus = smbus.SMBus(0) for older version boards
+Device_Address = 0x68   # MPU6050 device address
+
 #default settings, should be overwritten by the config update
 moduleName = "ESM"
 contLength = 30
 contClipLength = 20
 trigLengthBefore = 15
 trigLengthAfter = 15
+accelSensSelect = 'vlow'
+gyroSensSelect = 'vlow'
+
+accel_sensitivity = ACCEL_VERY_LOW_SENS
+gyro_sensitivity = GYRO_VERY_LOW_SENS
 
 def updateConfig():
     #Download the config file from Google Drive
@@ -55,9 +98,86 @@ def updateConfig():
     accelSensSelect = accelSensSelect.split(":")[1].lstrip()
     gyroSensSelect = gyroSensSelect.split(":")[1].lstrip()
 
-    return moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter
+    #Sets the accelerometers sensitivity, default=hi
+    if (accelSensSelect == 'hi'):
+        accel_sensitivity = ACCEL_HI_SENS
+    elif (accelSensSelect == 'med'):
+        accel_sensitivity = ACCEL_MED_SENS
+    elif (accelSensSelect == 'low'):
+        accel_sensitivity = ACCEL_LOW_SENS
+    elif (accelSensSelect == 'vlow'):
+        accel_sensitivity = ACCEL_VERY_LOW_SENS
+    else:
+        accel_sensitivity = ACCEL_VERY_LOW_SENS
 
-#Continuous Mode
+    #Sets the gyroscope sensitivity, default=hi
+    if (gyroSensSelect == 'hi'):
+        gyro_sensitivity = GYRO_HI_SENS
+    elif (gyroSensSelect == 'med'):
+        gyro_sensitivity = GYRO_MED_SENS
+    elif (gyroSensSelect == 'low'):
+        gyro_sensitivity = GYRO_LOW_SENS
+    elif (gyroSensSelect == 'vlow'):
+        gyro_sensitivity = GYRO_VERY_LOW_SENS
+    else:
+        gyro_sensitivity = GYRO_VERY_LOW_SENS 
+
+    return moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity
+
+def MPU_Init():
+    #write to sample rate register
+    bus.write_byte_data(Device_Address, SMPLRT_DIV, 7)
+    
+    #Write to power management register
+    bus.write_byte_data(Device_Address, PWR_MGMT_1, 1)
+    
+    #Write to Configuration register
+    bus.write_byte_data(Device_Address, CONFIG, 0)
+    
+    #Write to Gyro configuration register
+    bus.write_byte_data(Device_Address, GYRO_CONFIG, 24)
+    
+    #Write to interrupt enable register
+    bus.write_byte_data(Device_Address, INT_ENABLE, 1)
+
+
+def read_raw_data(addr):
+    #Accelero and Gyro value are 16-bit
+    high = bus.read_byte_data(Device_Address, addr)
+    low = bus.read_byte_data(Device_Address, addr+1)
+
+    #concatenate higher and lower value
+    value = ((high << 8) | low)
+    
+    #to get signed value from mpu6050
+    if(value > 32768):
+            value = value - 65536
+    return value
+
+
+def get_data():
+    #Read Accelerometer raw value
+    acc_x = read_raw_data(ACCEL_XOUT_H)
+    acc_y = read_raw_data(ACCEL_YOUT_H)
+    acc_z = read_raw_data(ACCEL_ZOUT_H)
+        
+    #Read Gyroscope raw value
+    gyro_x = read_raw_data(GYRO_XOUT_H)
+    gyro_y = read_raw_data(GYRO_YOUT_H)
+    gyro_z = read_raw_data(GYRO_ZOUT_H)
+        
+    #Full scale range +/- 250 degree/C as per sensitivity scale factor
+    Ax = acc_x/accel_sensitivity
+    Ay = acc_y/accel_sensitivity
+    Az = acc_z/accel_sensitivity
+        
+    Gx = gyro_x/gyro_sensitivity
+    Gy = gyro_y/gyro_sensitivity
+    Gz = gyro_z/gyro_sensitivity
+
+    return [time.time(), Ax, Ay, Az, Gx, Gy, Gz]
+    
+#Record audio and gyroscope data in Continuous Mode
 def startContRecording(contLength, contClipLength):
     #Based on code from https://realpython.com/playing-and-recording-sound-python/
     continuousModeLength = contLength*60 # Length of recording in seconds
@@ -68,6 +188,8 @@ def startContRecording(contLength, contClipLength):
 
     startTime = datetime.now()
     stream = pc.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
+    
+    accelFile = open("Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + "_accel_data.txt", "w")
         
     #Initialize arrays to store frames
     frames1 = []  
@@ -108,6 +230,12 @@ def startContRecording(contLength, contClipLength):
                 wf.close()
 
                 frames2 = []
+                
+        #Write gyroscope data to file
+        accelData = get_data()
+        for elem in accelData:
+            accelFile.write(str(elem) + ' ')
+        accelFile.write('\n')
 
     filename = "Recordings/" + moduleName + " - " + startTime.strftime("%d-%m-%Y %H-%M") + " " + str(clipNumber) + ".wav"
     if len(activeFrameList) > 0:
@@ -118,6 +246,8 @@ def startContRecording(contLength, contClipLength):
         wf.setframerate(samplingRate)
         wf.writeframes(b''.join(activeFrameList))
         wf.close()
+        
+    accelFile.close()
 
     # Stop and close the stream 
     stream.stop_stream()
@@ -128,11 +258,13 @@ def startContRecording(contLength, contClipLength):
     return
 
 def main():
-    moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter = updateConfig()
+    MPU_Init()
+    moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity = updateConfig()
     p = pyaudio.PyAudio()  # Create an interface to PortAudio
     stream = p.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
     # Create fixed-size buffer for triggered mode
     audioQueue = deque(maxlen=int((trigLengthBefore+trigLengthAfter)*samplingRate/chunk))
+    accelQueue = deque(maxlen=int((trigLengthBefore+trigLengthAfter)*samplingRate/chunk))
     
     # Frequency of the sensor recordings in seconds
     frequency = 5
@@ -150,16 +282,20 @@ def main():
     startTrig = False
     while True:
         audioQueue.append(stream.read(chunk))
+        accelQueue.append(get_data())
         
         # Continuous Mode
         if GPIO.event_detected(5):
             # Previous recording should end before a new one starts
             if datetime.now() - timedelta(minutes=contLength) > lastContRecording:
                 lastContRecording = datetime.now()
-                moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter = updateConfig()
+                moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity = updateConfig()
                 print("Recording for " + str(contLength) + " minutes")
                 micThread = Thread(target=startContRecording, args=(contLength, contClipLength,))
                 micThread.start()
+
+                sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency, contLength,))
+                sensors_thread.start()
         # Triggered Mode
         if GPIO.event_detected(6) and not startTrig:
                 lastTrigRecording = datetime.now()
@@ -169,9 +305,15 @@ def main():
                 triggered_sensor_thread = Thread(target=triggered_grab_data, args=(startTrigTime, trigLengthBefore, trigLengthAfter, frequency,))
                 triggered_sensor_thread.start()
             
-        # Save window of audio around trigger
+        # Save window of audio and gyroscope data around trigger
         if startTrig and (datetime.now() - timedelta(seconds=trigLengthAfter) > startTrigTime):
             savedAudioQueue = audioQueue
+            savedAccelQueue = accelQueue
+            with open("Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S") + "_triggered_accel_data.txt", "w") as logfile:
+                for accelList in savedAccelQueue:
+                    for elem in accelList:
+                        logfile.write(str(elem) + ' ')
+                    logfile.write('\n')
             frames = []
             for elem in savedAudioQueue:
                 frames.append(elem)

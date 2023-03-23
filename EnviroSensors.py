@@ -33,7 +33,7 @@ def write_logline(logfile, text):
 
 
 def write_log(values):
-    with open("test.txt", "a") as logfile:
+    with open("Recordings/temp.txt", "a") as logfile:
         write_logline(logfile, values)
 
 # Read values from BME280 and return as dict
@@ -156,7 +156,7 @@ def triggered_grab_data(startTime, before, after, frequency):
     time.sleep(after)
     temp = ""
     n = math.ceil(duration/frequency)
-    with open("test.txt", "r") as logfile:
+    with open("Recordings/temp.txt", "r") as logfile:
         # Skips text before the beginning of the interesting block:
         for line in (logfile.readlines() [-n:]):
             print(line, end ='')
@@ -166,7 +166,7 @@ def triggered_grab_data(startTime, before, after, frequency):
     triggered_output_log(startTime, temp)
             
 def triggered_output_log(startTime, temp):
-    with open(startTime.strftime("%d-%m-%Y %H-%M-%S") + "_tiggered_log.txt", "a") as logfile:
+    with open("Recordings/" + startTime.strftime("%d-%m-%Y %H-%M-%S") + "_tiggered_log.txt", "a") as logfile:
         logfile.write(temp)
 
         
