@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import gdown
 import RPi.GPIO as GPIO
 
-from EnviroSensors import continuous_sensor_recording, triggered_grab_data
+from EnviroSensors import continuous_sensor_recording, grab_data
 
 #Pin settings
 GPIO.setmode(GPIO.BCM) # Use logical pin numbering
@@ -63,6 +63,9 @@ Device_Address = 0x68   # MPU6050 device address
 
 #default settings, should be overwritten by the config update
 moduleName = "ESM"
+useMic = "y"
+useEnviro = "y"
+useGyro = "y"
 contLength = 30
 contClipLength = 20
 trigLengthBefore = 15
@@ -82,6 +85,9 @@ def updateConfig():
     #Parse config file
     with open('/home/pi/Desktop/ESM_Prod/config.txt') as f:
         moduleName = f.readline().strip()
+        useMic = f.readline().strip()
+        useEnviro = f.readline().strip()
+        useGyro = f.readline().strip()
         contLength = f.readline().strip()
         contClipLength = f.readline().strip()
         trigLengthBefore = f.readline().strip()
@@ -91,12 +97,29 @@ def updateConfig():
 
     #Stripping off the variable name and converting to int
     moduleName = moduleName.split(":")[1].lstrip()
+    useMic = useMic.split(":")[1].lstrip()
+    useEnviro = useEnviro.split(":")[1].lstrip()
+    useGyro = useGyro.split(":")[1].lstrip()
     contLength = int(contLength.split(":")[1].lstrip())
     contClipLength = int(contClipLength.split(":")[1].lstrip())
     trigLengthBefore = int(trigLengthBefore.split(":")[1].lstrip())
     trigLengthAfter = int(trigLengthAfter.split(":")[1].lstrip())
     accelSensSelect = accelSensSelect.split(":")[1].lstrip()
     gyroSensSelect = gyroSensSelect.split(":")[1].lstrip()
+    
+    # Set device usage
+    if (useMic == "y"):
+        useMic = True
+    else:
+        useMic = False
+    if (useEnviro == "y"):
+        useEnviro = True
+    else:
+        useEnviro = False
+    if (useGyro == "y"):
+        useGyro = True
+    else:
+        useGyro = False
 
     #Sets the accelerometers sensitivity, default=hi
     if (accelSensSelect == 'hi'):
@@ -122,7 +145,7 @@ def updateConfig():
     else:
         gyro_sensitivity = GYRO_VERY_LOW_SENS 
 
-    return moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity
+    return moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro
 
 def MPU_Init():
     #write to sample rate register
@@ -189,7 +212,8 @@ def startContRecording(contLength, contClipLength):
     startTime = datetime.now()
     stream = pc.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
     
-    accelFile = open("Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + "_accel_data.txt", "w")
+    accelFile = open("/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + "_accel_data.txt", "w")
+    accelFile.write("Time Ax Ay Az Gx Gy Gz \n")
         
     #Initialize arrays to store frames
     frames1 = []  
@@ -202,42 +226,44 @@ def startContRecording(contLength, contClipLength):
     for i in range(0, int(samplingRate/chunk*continuousModeLength)):
         numFrames += 1
         activeFrameList.append(stream.read(chunk))
-        # Once we've reached the max audio clip length, swap to the other frame list and start processing the clip
-        if numFrames == maxFramesPerClip:
-            filename = "Recordings/" + moduleName + " - " + startTime.strftime("%d-%m-%Y %H-%M") + " " + str(clipNumber) + ".wav"
-            clipNumber += 1
-            numFrames = 0
+        if useMic:
+            # Once we've reached the max audio clip length, swap to the other frame list and start processing the clip
+            if numFrames == maxFramesPerClip:
+                filename = "/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + " " + str(clipNumber) + ".wav"
+                clipNumber += 1
+                numFrames = 0
 
-            if activeFrameList == frames1:
-                activeFrameList = frames2
-                # Save the recorded data as a WAV file
-                wf = wave.open(filename, 'wb')
-                wf.setnchannels(channels)
-                wf.setsampwidth(pc.get_sample_size(sampleFormat))
-                wf.setframerate(samplingRate)
-                wf.writeframes(b''.join(frames1))
-                wf.close()
+                if activeFrameList == frames1:
+                    activeFrameList = frames2
+                    # Save the recorded data as a WAV file
+                    wf = wave.open(filename, 'wb')
+                    wf.setnchannels(channels)
+                    wf.setsampwidth(pc.get_sample_size(sampleFormat))
+                    wf.setframerate(samplingRate)
+                    wf.writeframes(b''.join(frames1))
+                    wf.close()
 
-                frames1 = []
-            else:
-                activeFrameList = frames1
-                # Save the recorded data as a WAV file
-                wf = wave.open(filename, 'wb')
-                wf.setnchannels(channels)
-                wf.setsampwidth(pc.get_sample_size(sampleFormat))
-                wf.setframerate(samplingRate)
-                wf.writeframes(b''.join(frames2))
-                wf.close()
+                    frames1 = []
+                else:
+                    activeFrameList = frames1
+                    # Save the recorded data as a WAV file
+                    wf = wave.open(filename, 'wb')
+                    wf.setnchannels(channels)
+                    wf.setsampwidth(pc.get_sample_size(sampleFormat))
+                    wf.setframerate(samplingRate)
+                    wf.writeframes(b''.join(frames2))
+                    wf.close()
 
-                frames2 = []
-                
-        #Write gyroscope data to file
-        accelData = get_data()
-        for elem in accelData:
-            accelFile.write(str(elem) + ' ')
-        accelFile.write('\n')
+                    frames2 = []
+        
+        if useGyro:        
+            #Write gyroscope data to file
+            accelData = get_data()
+            for elem in accelData:
+                accelFile.write(str(elem) + ' ')
+            accelFile.write('\n')
 
-    filename = "Recordings/" + moduleName + " - " + startTime.strftime("%d-%m-%Y %H-%M") + " " + str(clipNumber) + ".wav"
+    filename = "/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + " " + str(clipNumber) + ".wav"
     if len(activeFrameList) > 0:
         # Save the recorded data as a WAV file
         wf = wave.open(filename, 'wb')
@@ -258,8 +284,9 @@ def startContRecording(contLength, contClipLength):
     return
 
 def main():
+    time.sleep(5)
     MPU_Init()
-    moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity = updateConfig()
+    moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro = updateConfig()
     p = pyaudio.PyAudio()  # Create an interface to PortAudio
     stream = p.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
     # Create fixed-size buffer for triggered mode
@@ -269,15 +296,15 @@ def main():
     # Frequency of the sensor recordings in seconds
     frequency = 5
     
-    # Starts recording from Enviro+ board
-    sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency, contLength,))
-    sensors_thread.start()
+    if useEnviro:
+        # Starts recording from Enviro+ board
+        sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency,))
+        sensors_thread.start()
     
-    # Stabilize sensors 
-    time.sleep(10)
+        # Stabilize sensors 
+        time.sleep(10)
     
     lastContRecording = datetime(2000, 1, 1)
-    lastTrigRecording = datetime(2000, 1, 1)
     startTrigTime = datetime(2000, 1, 1)
     startTrig = False
     while True:
@@ -289,44 +316,50 @@ def main():
             # Previous recording should end before a new one starts
             if datetime.now() - timedelta(minutes=contLength) > lastContRecording:
                 lastContRecording = datetime.now()
-                moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity = updateConfig()
+                moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro = updateConfig()
                 print("Recording for " + str(contLength) + " minutes")
-                micThread = Thread(target=startContRecording, args=(contLength, contClipLength,))
-                micThread.start()
-
-                sensors_thread = Thread(target=continuous_sensor_recording, args=(frequency, contLength,))
-                sensors_thread.start()
+                if useMic:
+                    micThread = Thread(target=startContRecording, args=(contLength, contClipLength,))
+                    micThread.start()
+                if useEnviro:
+                    cont_sensor_thread = Thread(target=grab_data, args=(lastContRecording, 0, contLength*60, frequency, False))
+                    cont_sensor_thread.start()
         # Triggered Mode
         if GPIO.event_detected(6) and not startTrig:
-                lastTrigRecording = datetime.now()
                 startTrigTime = datetime.now()
                 startTrig = True
                 print("Recording grab triggered")
-                triggered_sensor_thread = Thread(target=triggered_grab_data, args=(startTrigTime, trigLengthBefore, trigLengthAfter, frequency,))
-                triggered_sensor_thread.start()
+                if useEnviro:
+                    triggered_sensor_thread = Thread(target=grab_data, args=(startTrigTime, trigLengthBefore, trigLengthAfter, frequency, True))
+                    triggered_sensor_thread.start()
             
         # Save window of audio and gyroscope data around trigger
         if startTrig and (datetime.now() - timedelta(seconds=trigLengthAfter) > startTrigTime):
             savedAudioQueue = audioQueue
-            savedAccelQueue = accelQueue
-            with open("Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S") + "_triggered_accel_data.txt", "w") as logfile:
-                for accelList in savedAccelQueue:
-                    for elem in accelList:
-                        logfile.write(str(elem) + ' ')
-                    logfile.write('\n')
-            frames = []
-            for elem in savedAudioQueue:
-                frames.append(elem)
-                    
-            filename = "Recordings/" + moduleName + " - " + startTrigTime.strftime("%d-%m-%Y %H-%M-%S") + ".wav"
-            # Save the recorded data as a WAV file
-            wf = wave.open(filename, 'wb')
-            wf.setnchannels(channels)
-            wf.setsampwidth(p.get_sample_size(sampleFormat))
-            wf.setframerate(samplingRate)
-            wf.writeframes(b''.join(frames))
-            wf.close()
-            print("Recording saved")
+            
+            if useGyro:
+                savedAccelQueue = accelQueue
+                with open("/media/pi/DATA/Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S") + "_triggered_accel_data.txt", "w") as logfile:
+                    logfile.write("Time Ax Ay Az Gx Gy Gz \n")
+                    for accelList in savedAccelQueue:
+                        for elem in accelList:
+                            logfile.write(str(elem) + ' ')
+                        logfile.write('\n')
+                        
+            if useMic:
+                frames = []
+                for elem in savedAudioQueue:
+                    frames.append(elem)
+                        
+                filename = "/media/pi/DATA/Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S") + "_triggered.wav"
+                # Save the recorded data as a WAV file
+                wf = wave.open(filename, 'wb')
+                wf.setnchannels(channels)
+                wf.setsampwidth(p.get_sample_size(sampleFormat))
+                wf.setframerate(samplingRate)
+                wf.writeframes(b''.join(frames))
+                wf.close()
+                print("Recording saved")
             startTrig = False
 
     # Stop and close the stream 

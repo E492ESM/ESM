@@ -25,35 +25,31 @@ try:
 except ImportError:
     from smbus import SMBus
 
-def write_logline(logfile, text):
-    now = datetime.strftime(datetime.now(), '%d-%m-%Y %H-%M-%S')
-    log_text = '{}  {}\n'.format(now, text)
-    print(log_text, end='')     # also display log info, comment out if not needed
-    logfile.write(log_text)
-
 
 def write_log(values):
-    with open("Recordings/temp.txt", "a") as logfile:
-        write_logline(logfile, values)
+    with open("/media/pi/DATA/Recordings/Enviro_data.txt", "a") as logFile:
+        logFile.write(datetime.strftime(datetime.now(), '%d-%m-%Y %H-%M-%S') + ' ')
+        for elem in values:
+            logFile.write(str(elem) + ' ')
+        logFile.write('\n')
+
 
 # Read values from BME280 and return as dict
 def read_bme280(bme280):
     # Compensation factor for temperature
     comp_factor = 2.25
-    values = {}
+    values = []
     cpu_temp = get_cpu_temperature()
     raw_temp = bme280.get_temperature()  # float
     comp_temp = raw_temp - ((cpu_temp - raw_temp) / comp_factor)
-    values["temperature"] = int(comp_temp)
-    values["pressure(hPa)"] = round(
-        int(bme280.get_pressure()), -1
-    )  # round to nearest 10
-    values["humidity"] = int(bme280.get_humidity())
+    values.append(int(comp_temp))
+    values.append(round(int(bme280.get_pressure()), -1))  # round to nearest 10
+    values.append(int(bme280.get_humidity()))
     data = gas.read_all()
     #values["oxidised"] = int(data.oxidising / 1000)
     #values["reduced"] = int(data.reducing / 1000)
-    values["nh3(Ohms)"] = int(data.nh3 / 1000)
-    values["lux"] = int(ltr559.get_lux())
+    values.append(int(data.nh3 / 1000))
+    values.append(int(ltr559.get_lux()))
     return values
 
 
@@ -108,11 +104,7 @@ def display_status(disp):
     disp.display(img)
 
 
-
-def continuous_sensor_recording(frequency, timeout):
-    # Timeout
-    #timer = time.time() + 60 * timeout
-    count = 0
+def continuous_sensor_recording(frequency):
 	# Raspberry Pi ID
     device_serial_number = get_serial_number()
     device_id = "raspi-" + device_serial_number
@@ -134,40 +126,38 @@ def continuous_sensor_recording(frequency, timeout):
     print("RPi serial: {}".format(device_serial_number))
     print("Wi-Fi: {}\n".format("connected" if check_wifi() else "disconnected"))
 
+    logFile = open("/media/pi/DATA/Recordings/Enviro_data.txt", "w")
+    logFile.close()
     # Main loop to read data, display
     while True:
-        print(count)
-        if (count > (timeout*60/frequency)):
-            print("breaking sensor")
-            break  
         try:
             values = read_bme280(bme280)
             write_log(values)
-            count = count + 1
             time.sleep(frequency)
             
         except Exception as e:
             print(e)
-    print("done sensor")
 
-def triggered_grab_data(startTime, before, after, frequency):
-    print(startTime)
+
+def grab_data(startTime, before, after, frequency, trigMode):
     duration = before + after
     time.sleep(after)
     temp = ""
     n = math.ceil(duration/frequency)
-    with open("Recordings/temp.txt", "r") as logfile:
+    with open("/media/pi/DATA/Recordings/Enviro_data.txt", "r") as logfile:
         # Skips text before the beginning of the interesting block:
         for line in (logfile.readlines() [-n:]):
             print(line, end ='')
             print("LOG:" + line)
             temp += line
 
-    triggered_output_log(startTime, temp)
-            
-def triggered_output_log(startTime, temp):
-    with open("Recordings/" + startTime.strftime("%d-%m-%Y %H-%M-%S") + "_tiggered_log.txt", "a") as logfile:
-        logfile.write(temp)
+    if trigMode:
+        logFile = open("/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M-%S") + "_triggered_Enviro_data.txt", "w")
+    else:
+        logFile = open("/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + "_Enviro_data.txt", "w")
+    logFile.write("Date Time Temperature Pressure Humidity Ammonia(Ohm) Light \n")  
+    logFile.write(temp)
+    logFile.close()
 
         
 def main():
@@ -196,7 +186,7 @@ def main():
     while True:
         try:
             values = read_bme280(bme280)
-            values["serial"] = device_serial_number
+            values.append(device_serial_number)
             print(values)
             time.sleep(3)
         except Exception as e:
