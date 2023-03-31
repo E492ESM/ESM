@@ -37,7 +37,7 @@ def write_log(values):
 # Read values from BME280 and return as dict
 def read_bme280(bme280):
     # Compensation factor for temperature
-    comp_factor = 2.25
+    comp_factor = 3.85
     values = []
     cpu_temp = get_cpu_temperature()
     raw_temp = bme280.get_temperature()  # float

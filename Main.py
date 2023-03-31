@@ -11,6 +11,11 @@ import matplotlib.pyplot as plt
 import gdown
 import RPi.GPIO as GPIO
 
+from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
+import ST7735
+
 from EnviroSensors import continuous_sensor_recording, grab_data
 
 #Pin settings
@@ -61,6 +66,59 @@ NUM_POINTS = 1000 # Number of points for testing
 bus = smbus.SMBus(1)    # or bus = smbus.SMBus(0) for older version boards
 Device_Address = 0x68   # MPU6050 device address
 
+
+#LCD config
+line2 = ""
+line3 = ""
+line4 = ""
+
+'''
+MESSAGE = "TRIG REC"
+
+
+# Create ST7735 LCD display class.
+disp = ST7735.ST7735(port=0, cs=ST7735.BG_SPI_CS_FRONT, dc=9, backlight=19, rotation=90, spi_speed_hz=10000000)
+# Initialize display.
+disp.begin()
+WIDTH = disp.width
+HEIGHT = disp.height
+img = Image.new('RGB', (WIDTH, HEIGHT), color=(0, 0, 0))
+draw = ImageDraw.Draw(img)
+font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+size_x, size_y = draw.textsize(MESSAGE, font)
+text_x = 20
+text_y = (80 - size_y) // 2
+'''
+
+# Create LCD class instance.
+disp = ST7735.ST7735(
+    port=0,
+    cs=1,
+    dc=9,
+    backlight=12,
+    rotation=270,
+    spi_speed_hz=10000000
+)
+
+# Initialize display.
+disp.begin()
+
+# Width and height to calculate text position.
+WIDTH = disp.width
+HEIGHT = disp.height
+
+# New canvas to draw on.
+img = Image.new('RGB', (WIDTH, HEIGHT), color=(0, 0, 0))
+draw = ImageDraw.Draw(img)
+
+# Text settings.
+font_size = 25
+font = ImageFont.truetype(UserFont, font_size)
+text_colour = (255, 255, 255)
+back_colour = (0, 0, 0)
+
+
+
 #default settings, should be overwritten by the config update
 moduleName = "ESM"
 useMic = "y"
@@ -75,6 +133,26 @@ gyroSensSelect = 'vlow'
 
 accel_sensitivity = ACCEL_VERY_LOW_SENS
 gyro_sensitivity = GYRO_VERY_LOW_SENS
+
+
+def displayMsgLCD():
+
+    message = f"ESM\n{line2}\n{line3}\n{line4}"
+    # clear LCD
+    draw.rectangle((0, 0, 160, 80), (0, 0, 0))
+    disp.display(img)
+
+    size_x, size_y = draw.textsize(message, font)
+
+    # Calculate text position
+    x = (WIDTH - size_x) / 8
+    y = (HEIGHT / 4) - (size_y / 4)
+
+    # Draw background rectangle and write text.
+    draw.rectangle((0, 0, 160, 80), back_colour)
+    draw.text((x, y), message, font=font, fill=text_colour)
+    disp.display(img)
+
 
 def updateConfig():
     #Download the config file from Google Drive
@@ -202,6 +280,8 @@ def get_data():
     
 #Record audio and gyroscope data in Continuous Mode
 def startContRecording(contLength, contClipLength):
+
+    line3 = "CONT REC ON"
     #Based on code from https://realpython.com/playing-and-recording-sound-python/
     continuousModeLength = contLength*60 # Length of recording in seconds
     maxAudioClipLength = contClipLength*60
@@ -281,10 +361,20 @@ def startContRecording(contLength, contClipLength):
     # Terminate the PortAudio interface
     pc.terminate()
     print("Recording saved")
+
+    line3 = ""
     return
 
+
 def main():
+
+    displayMsgLCD()
+    line2 = "wait..."
+
     time.sleep(5)
+    line2 = ""
+    displayMsgLCD()
+
     MPU_Init()
     moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro = updateConfig()
     p = pyaudio.PyAudio()  # Create an interface to PortAudio
@@ -308,17 +398,22 @@ def main():
     startTrigTime = datetime(2000, 1, 1)
     startTrig = False
     while True:
+
+        displayMsgLCD()
+
         audioQueue.append(stream.read(chunk))
         accelQueue.append(get_data())
         
         # Continuous Mode
         if GPIO.event_detected(5):
+            
             # Previous recording should end before a new one starts
             if datetime.now() - timedelta(minutes=contLength) > lastContRecording:
                 lastContRecording = datetime.now()
                 moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro = updateConfig()
                 print("Recording for " + str(contLength) + " minutes")
                 if useMic:
+                    # micThread = Thread(target=startContRecording, args=(contLength, contClipLength, draw, img, disp))
                     micThread = Thread(target=startContRecording, args=(contLength, contClipLength,))
                     micThread.start()
                 if useEnviro:
@@ -332,6 +427,12 @@ def main():
                 if useEnviro:
                     triggered_sensor_thread = Thread(target=grab_data, args=(startTrigTime, trigLengthBefore, trigLengthAfter, frequency, True))
                     triggered_sensor_thread.start()
+                # Display recording in-progress message on LCD
+                # draw.rectangle((0, 0, 160, 80), (0, 0, 0))
+                # draw.text((text_x, text_y), MESSAGE, font=font, fill=(255, 255, 255))
+                # disp.display(img)
+                line4 = "TRIG REC ON"
+                displayMsgLCD()
             
         # Save window of audio and gyroscope data around trigger
         if startTrig and (datetime.now() - timedelta(seconds=trigLengthAfter) > startTrigTime):
@@ -360,7 +461,14 @@ def main():
                 wf.writeframes(b''.join(frames))
                 wf.close()
                 print("Recording saved")
+
+            line4 = ""
+            displayMsgLCD()
             startTrig = False
+
+    # Clear LCD
+    draw.rectangle((0, 0, 160, 80), (0, 0, 0))
+    disp.display(img)
 
     # Stop and close the stream 
     stream.stop_stream()
@@ -370,8 +478,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
-
-
-
-
