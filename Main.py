@@ -280,7 +280,7 @@ def get_data():
     
 #Record audio and gyroscope data in Continuous Mode
 def startContRecording(contLength, contClipLength):
-
+    global line3
     line3 = "CONT REC ON"
     #Based on code from https://realpython.com/playing-and-recording-sound-python/
     continuousModeLength = contLength*60 # Length of recording in seconds
@@ -367,7 +367,8 @@ def startContRecording(contLength, contClipLength):
 
 
 def main():
-
+    global line2
+    global line4
     displayMsgLCD()
     line2 = "wait..."
 
