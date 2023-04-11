@@ -11,6 +11,11 @@ import matplotlib.pyplot as plt
 import gdown
 import RPi.GPIO as GPIO
 
+from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
+import ST7735
+
 from EnviroSensors import continuous_sensor_recording, grab_data
 
 #Pin settings
@@ -61,6 +66,42 @@ NUM_POINTS = 1000 # Number of points for testing
 bus = smbus.SMBus(1)    # or bus = smbus.SMBus(0) for older version boards
 Device_Address = 0x68   # MPU6050 device address
 
+
+#LCD config
+line2 = ""
+line3 = ""
+line4 = ""
+
+# Create LCD class instance.
+disp = ST7735.ST7735(
+    port=0,
+    cs=1,
+    dc=9,
+    backlight=12,
+    rotation=270,
+    spi_speed_hz=10000000
+)
+
+# Initialize display.
+disp.begin()
+
+# Width and height to calculate text position.
+WIDTH = disp.width
+HEIGHT = disp.height
+
+# New canvas to draw on.
+img = Image.new('RGB', (WIDTH, HEIGHT), color=(0, 0, 0))
+draw = ImageDraw.Draw(img)
+
+# Text settings.
+user_font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+font_size = 16
+font = ImageFont.truetype(user_font, font_size)
+text_colour = (255, 255, 255)
+back_colour = (0, 0, 0)
+
+
+
 #default settings, should be overwritten by the config update
 moduleName = "ESM"
 useMic = "y"
@@ -76,14 +117,34 @@ gyroSensSelect = 'vlow'
 accel_sensitivity = ACCEL_VERY_LOW_SENS
 gyro_sensitivity = GYRO_VERY_LOW_SENS
 
+
+def displayMsgLCD():
+
+    message = f"ESM\n{line2}\n{line3}\n{line4}"
+    # clear LCD
+    draw.rectangle((0, 0, 160, 80), (0, 0, 0))
+    disp.display(img)
+
+    size_x, size_y = draw.textsize(message, font)
+
+    # Calculate text position
+    x = (WIDTH - size_x) / 8
+    y = (HEIGHT / 4) - (size_y / 4)
+
+    # Draw background rectangle and write text.
+    draw.rectangle((0, 0, 160, 80), back_colour)
+    draw.text((x, y), message, font=font, fill=text_colour)
+    disp.display(img)
+
+
 def updateConfig():
     #Download the config file from Google Drive
-    url = 'https://drive.google.com/uc?id=1JLCfnInWqMLgsnM06CptSa6VYjuuY1tZ'
-    output = '/home/pi/Desktop/ESM_Prod/config.txt'
-    gdown.download(url, output, quiet=False)
+    #url = 'https://drive.google.com/uc?id=1JLCfnInWqMLgsnM06CptSa6VYjuuY1tZ'
+    #output = '/home/pi/Desktop/ESM_Prod/config.txt'
+    #gdown.download(url, output, quiet=False)
 
     #Parse config file
-    with open('/home/pi/Desktop/ESM_Prod/config.txt') as f:
+    with open('/media/pi/DATA/config.txt') as f:
         moduleName = f.readline().strip()
         useMic = f.readline().strip()
         useEnviro = f.readline().strip()
@@ -198,10 +259,12 @@ def get_data():
     Gy = gyro_y/gyro_sensitivity
     Gz = gyro_z/gyro_sensitivity
 
-    return [time.time(), Ax, Ay, Az, Gx, Gy, Gz]
+    return [datetime.now().strftime("%d-%m-%Y %H-%M-%S.%f")[:-3], Ax, Ay, Az, Gx, Gy, Gz]
     
 #Record audio and gyroscope data in Continuous Mode
 def startContRecording(contLength, contClipLength):
+    global line3
+    line3 = "CONT REC ON"
     #Based on code from https://realpython.com/playing-and-recording-sound-python/
     continuousModeLength = contLength*60 # Length of recording in seconds
     maxAudioClipLength = contClipLength*60
@@ -212,7 +275,7 @@ def startContRecording(contLength, contClipLength):
     startTime = datetime.now()
     stream = pc.open(format=sampleFormat, channels=channels, rate=samplingRate, frames_per_buffer=chunk, input=True)
     
-    accelFile = open("/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + "_accel_data.txt", "w")
+    accelFile = open("/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M-%S.%f")[:-3] + "_accel_data.txt", "w")
     accelFile.write("Time Ax Ay Az Gx Gy Gz \n")
         
     #Initialize arrays to store frames
@@ -229,7 +292,7 @@ def startContRecording(contLength, contClipLength):
         if useMic:
             # Once we've reached the max audio clip length, swap to the other frame list and start processing the clip
             if numFrames == maxFramesPerClip:
-                filename = "/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + " " + str(clipNumber) + ".wav"
+                filename = "/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M-%S.%f")[:-3] + " " + str(clipNumber) + ".wav"
                 clipNumber += 1
                 numFrames = 0
 
@@ -263,7 +326,7 @@ def startContRecording(contLength, contClipLength):
                 accelFile.write(str(elem) + ' ')
             accelFile.write('\n')
 
-    filename = "/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M") + " " + str(clipNumber) + ".wav"
+    filename = "/media/pi/DATA/Recordings/" + startTime.strftime("%d-%m-%Y %H-%M-%S.%f")[:-3] + " " + str(clipNumber) + ".wav"
     if len(activeFrameList) > 0:
         # Save the recorded data as a WAV file
         wf = wave.open(filename, 'wb')
@@ -281,10 +344,21 @@ def startContRecording(contLength, contClipLength):
     # Terminate the PortAudio interface
     pc.terminate()
     print("Recording saved")
+
+    line3 = ""
     return
 
+
 def main():
-    time.sleep(5)
+    global line2
+    global line4
+    displayMsgLCD()
+    line2 = "wait..."
+
+    time.sleep(3)
+    line2 = ""
+    displayMsgLCD()
+
     MPU_Init()
     moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro = updateConfig()
     p = pyaudio.PyAudio()  # Create an interface to PortAudio
@@ -302,21 +376,25 @@ def main():
         sensors_thread.start()
     
         # Stabilize sensors 
-        time.sleep(10)
+        #time.sleep(10)
     
     lastContRecording = datetime(2000, 1, 1)
     startTrigTime = datetime(2000, 1, 1)
     startTrig = False
     while True:
+
+        displayMsgLCD()
+
         audioQueue.append(stream.read(chunk))
         accelQueue.append(get_data())
         
         # Continuous Mode
         if GPIO.event_detected(5):
+            
             # Previous recording should end before a new one starts
             if datetime.now() - timedelta(minutes=contLength) > lastContRecording:
                 lastContRecording = datetime.now()
-                moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro = updateConfig()
+                #moduleName, contLength, contClipLength, trigLengthBefore, trigLengthAfter, accel_sensitivity, gyro_sensitivity, useMic, useEnviro, useGyro = updateConfig()
                 print("Recording for " + str(contLength) + " minutes")
                 if useMic:
                     micThread = Thread(target=startContRecording, args=(contLength, contClipLength,))
@@ -332,6 +410,10 @@ def main():
                 if useEnviro:
                     triggered_sensor_thread = Thread(target=grab_data, args=(startTrigTime, trigLengthBefore, trigLengthAfter, frequency, True))
                     triggered_sensor_thread.start()
+                # Display recording in-progress message on LCD
+
+                line4 = "TRIG REC ON"
+                displayMsgLCD()
             
         # Save window of audio and gyroscope data around trigger
         if startTrig and (datetime.now() - timedelta(seconds=trigLengthAfter) > startTrigTime):
@@ -339,7 +421,7 @@ def main():
             
             if useGyro:
                 savedAccelQueue = accelQueue
-                with open("/media/pi/DATA/Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S") + "_triggered_accel_data.txt", "w") as logfile:
+                with open("/media/pi/DATA/Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S.%f")[:-3] + "_triggered_accel_data.txt", "w") as logfile:
                     logfile.write("Time Ax Ay Az Gx Gy Gz \n")
                     for accelList in savedAccelQueue:
                         for elem in accelList:
@@ -351,7 +433,7 @@ def main():
                 for elem in savedAudioQueue:
                     frames.append(elem)
                         
-                filename = "/media/pi/DATA/Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S") + "_triggered.wav"
+                filename = "/media/pi/DATA/Recordings/" + startTrigTime.strftime("%d-%m-%Y %H-%M-%S.%f")[:-3] + "_triggered.wav"
                 # Save the recorded data as a WAV file
                 wf = wave.open(filename, 'wb')
                 wf.setnchannels(channels)
@@ -360,7 +442,14 @@ def main():
                 wf.writeframes(b''.join(frames))
                 wf.close()
                 print("Recording saved")
+
+            line4 = ""
+            displayMsgLCD()
             startTrig = False
+
+    # Clear LCD
+    #draw.rectangle((0, 0, 160, 80), (0, 0, 0))
+    disp.display(img)
 
     # Stop and close the stream 
     stream.stop_stream()
@@ -370,8 +459,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
-
-
-
-
